@@ -1,6 +1,6 @@
 #include <sourcemod>
 #include <smlib>
-//#include <discord_utilities>
+#include <discord_utilities>
 #include <multicolors>
 
 #pragma newdecls required
@@ -11,7 +11,7 @@ public Plugin myinfo =
     name = "Give Roles",
     author = "Nano",
     description = "Automatically give roles on discord when players join, or link their accounts, or claim their roles",
-    version = "1.0",
+    version = "1.1",
     url = "https://steamcommunity.com/id/nano2k06/"
 };
 
@@ -173,7 +173,7 @@ void HandleRoles()
 					{
 						if(Client_HasAdminFlags(i, iFlag))
 						{
-							//DU_AddRole(i, sRoleID);
+							DU_AddRole(i, sRoleID);
 							if(g_bIsLink)
 							{
 								Format(sDisplayText, sizeof(sDisplayText), "<span font color='#00FFFF'>───────────</font></span>Discord Roles <span font color='#00FFFF'>───────────</font></span>\nYou have now a Discord role on our Discord server!");
@@ -184,7 +184,7 @@ void HandleRoles()
 						{
 							if(g_bIsTimer)
 							{
-								//DU_DeleteRole(i, sRoleID);
+								DU_DeleteRole(i, sRoleID);
 							}
 						}
 					}
@@ -236,8 +236,8 @@ stock bool IsValidClient(int client)
 	if((1 <= client <= MaxClients) 
 	&& IsClientInGame(client) 
 	&& !IsFakeClient(client)
-	//&& DU_IsChecked(client)	
-	//&& DU_IsMember(client)
+	&& DU_IsChecked(client)	
+	&& DU_IsMember(client)
 	&& IsClientConnected(client))
 		return true;
 	return false;
