@@ -1,6 +1,6 @@
 #include <sourcemod>
 #include <smlib>
-#include <discord_utilities>
+//#include <discord_utilities>
 #include <multicolors>
 
 #pragma newdecls required
@@ -33,8 +33,8 @@ bool	g_bIsCommandPlayer[MAXPLAYERS+1] = {false, ...},
 public void OnPluginStart()
 {
 	g_cInterval	= CreateConVar("sm_gr_interval", 	"30",	"Time in seconds to refresh timer to check players flags (recommended a value greater than 10) (Default = 30)");
-	g_cMethod 	= CreateConVar("sm_gr_method", 		"2",	"What method do you want to use? 1 = Everytime an user links his account (this won't remove roles, it will just add them) | 2 = Using a timer (in seconds) that checks player's flags to add/remove discord roles. | 3 = Using a command to claim role | 4 = All methods (Default = 2)", _, true, 1.0, true, 4.0);
-	g_cCmd 		= CreateConVar("sm_gr_command", 	"0",	"Individual cvar to restrict commands and use the other 3 methods. This should be enabled if you are using 'sm_gr_method 3 or 4'. 1 = Enabled | 2 = Disabled (Default = 0)");
+	g_cMethod 	= CreateConVar("sm_gr_method", 		"2",	"What method do you want to use? 1 = Everytime an user links his account | 2 = Using a timer (in seconds) that checks player's flags to add/remove discord roles. | 3 = Using a command to claim role | 4 = All methods (Default = 2)", _, true, 1.0, true, 4.0);
+	g_cCmd 		= CreateConVar("sm_gr_command", 	"0",	"Individual cvar to restrict commands and use the other 3 methods. This should be enabled if you are using 'sm_gr_method 3 or 4'. 1 = Enabled | 0 = Disabled (Default = 0)");
 	
 	BuildPath(Path_SM, g_sPath, sizeof(g_sPath), "configs/GiveRoles.cfg");
 	if(!FileExists(g_sPath))
@@ -69,21 +69,29 @@ public void DU_OnLinkedAccount(int client, const char[] userid, const char[] use
 
 public Action Command_ClaimRole(int client, int args)
 {
-	if(!IsClientInGame(client))
+	if(!client)
 	{
 		return Plugin_Handled;
 	}
-	
-	if(g_cMethod.IntValue == 1 || g_cMethod.IntValue == 2)
+
+	if(GetUserAdmin(client).HasFlag(Admin_Generic))
 	{
-		g_bIsCommand = false;
+		if(g_cCmd.IntValue == 0 || g_cCmd.IntValue >= 2)
+		{
+			CPrintToChat(client, "{green}[DiscordRoles]{default} This feature is currently {darkred}disabled!");
+			CPrintToChat(client, "{green}[DiscordRoles]{default} Set the following cvar to 1: {green}sm_gr_command \"1\"");
+			return Plugin_Handled;
+		}
+	}
+	
+	if(g_cCmd.IntValue == 0 || g_cCmd.IntValue >= 2)
+	{
 		return Plugin_Handled;
 	}
 	
 	if(!g_cCmd.BoolValue)
 	{
 		CPrintToChat(client, "{green}[DiscordRoles]{default} This command is currently {darkred}disabled!");
-		g_bIsCommand = false;
 		return Plugin_Handled;
 	}
 
@@ -115,8 +123,10 @@ public Action Timer_CheckRoles(Handle timer)
 
 void HandleRoles()
 {
-	char	sFlags[30], 	sRoleIDA[32], 		sBuffer[128],
-			sRoleIDB[32], 	sRolesGroupID[256], sDisplayText[512];
+	char	sFlags[30], sTempFlag[32], sRolesGroupID[256],
+			sRoleID[32], sDisplayText[512];
+
+	int		iFlagCount;
 
 	KeyValues g_sKeyValues = CreateKeyValues("GiveRoles");
 	
@@ -126,50 +136,56 @@ void HandleRoles()
 
 	do
 	{
-		g_sKeyValues.GetSectionName(sRolesGroupID, 		sizeof(sRolesGroupID));
-		g_sKeyValues.GetString("roleida", 	sRoleIDA, 	sizeof(sRoleIDA));
-		g_sKeyValues.GetString("roleidb", 	sRoleIDB, 	sizeof(sRoleIDB));    
-		g_sKeyValues.GetString("flags", 	sFlags, 	sizeof(sFlags));
+		g_sKeyValues.GetSectionName(sRoleID, 			sizeof(sRoleID));
+		g_sKeyValues.GetString("name", 	sRolesGroupID, 	sizeof(sRolesGroupID));   
+		g_sKeyValues.GetString("flags", sFlags,		 	sizeof(sFlags));
+
+		iFlagCount = strlen(sFlags);
 		
-		if(StrContains("abcdefghijklmnopqrstz", sFlags) != -1)
+		for (int x = 0; x < iFlagCount; x++)
 		{
-			GetFlagInt(sFlags);
-
-			Format(sBuffer, sizeof(sBuffer), "%s%s", sRoleIDA, sRoleIDB);
-			int iFlag = StringToInt(sFlags);
-
-			for(int i = 1; i <= MaxClients; i++)
+			Format(sTempFlag, 2, sFlags[x]);
+			if(StrContains("abcdefghijklmnopqrst", sTempFlag) != -1)
 			{
-				if(g_bIsCommand)
+				GetFlagInt(sTempFlag);
+				int iFlag = StringToInt(sTempFlag);
+
+				for(int i = 1; i <= MaxClients; i++)
 				{
-					if(g_bIsCommandPlayer[i])
+					if(IsClientInGame(i) && GetUserAdmin(i).HasFlag(Admin_Root))
+					{
+						return;
+					}
+					if(g_bIsCommand)
+					{
+						if(g_bIsCommandPlayer[i])
+						{
+							if(Client_HasAdminFlags(i, iFlag))
+							{
+								Format(sDisplayText, sizeof(sDisplayText), "<span font color='#00FFFF'>───────────</font></span>Discord Roles <span font color='#00FFFF'>───────────</font></span>\nYou have successfully claimed your Discord role!");
+								PrintHintText(i, sDisplayText);
+								CPrintToChat(i, "{green}[DiscordRoles]{default} You have successfully claimed your {green}Discord role!");
+								g_bIsCommandPlayer[i] = false;
+							}
+						}
+					}
+					if(IsValidClient(i))
 					{
 						if(Client_HasAdminFlags(i, iFlag))
 						{
-							Format(sDisplayText, sizeof(sDisplayText), "<span font color='#00FFFF'>───────────</font></span>Discord Roles <span font color='#00FFFF'>───────────</font></span>\nYou have successfully claimed your Discord role!");
-							PrintHintText(i, sDisplayText);
-							CPrintToChat(i, "{green}[DiscordRoles]{default} You have successfully claimed your {green}Discord role!");
-							g_bIsCommandPlayer[i] = false;
-							PrintToChat(i, "With access to: %s. Role ID: %s", sRolesGroupID, sBuffer);
+							//DU_AddRole(i, sRoleID);
+							if(g_bIsLink)
+							{
+								Format(sDisplayText, sizeof(sDisplayText), "<span font color='#00FFFF'>───────────</font></span>Discord Roles <span font color='#00FFFF'>───────────</font></span>\nYou have now a Discord role on our Discord server!");
+								PrintHintText(i, sDisplayText);
+							}
 						}
-					}
-				}
-				if(IsValidClient(i))
-				{
-					if(Client_HasAdminFlags(i, iFlag))
-					{
-						DU_AddRole(i, sBuffer);
-						if(g_bIsLink)
+						else
 						{
-							Format(sDisplayText, sizeof(sDisplayText), "<span font color='#00FFFF'>───────────</font></span>Discord Roles <span font color='#00FFFF'>───────────</font></span>\nYou have now a Discord role on our Discord server!");
-							PrintHintText(i, sDisplayText);
-						}
-					}
-					else
-					{
-						if(g_bIsTimer)
-						{
-							DU_DeleteRole(i, sBuffer);
+							if(g_bIsTimer)
+							{
+								//DU_DeleteRole(i, sRoleID);
+							}
 						}
 					}
 				}
@@ -200,7 +216,6 @@ stock void GetFlagInt(char sBuffer[30])
 	FlagStringToInt(sBuffer, "l", ADMFLAG_PASSWORD);
 	FlagStringToInt(sBuffer, "m", ADMFLAG_RCON);
 	FlagStringToInt(sBuffer, "n", ADMFLAG_CHEATS);
-	FlagStringToInt(sBuffer, "z", ADMFLAG_ROOT);
 	FlagStringToInt(sBuffer, "o", ADMFLAG_CUSTOM1);
 	FlagStringToInt(sBuffer, "p", ADMFLAG_CUSTOM2);
 	FlagStringToInt(sBuffer, "q", ADMFLAG_CUSTOM3);
@@ -221,8 +236,8 @@ stock bool IsValidClient(int client)
 	if((1 <= client <= MaxClients) 
 	&& IsClientInGame(client) 
 	&& !IsFakeClient(client)
-	&& DU_IsChecked(client)	
-	&& DU_IsMember(client)
+	//&& DU_IsChecked(client)	
+	//&& DU_IsMember(client)
 	&& IsClientConnected(client))
 		return true;
 	return false;
