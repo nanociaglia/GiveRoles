@@ -8,33 +8,22 @@
 
 public Plugin myinfo = 
 {
-    name = "Give Roles",
-    author = "Nano",
-    description = "Automatically give roles on discord when players join, or link their accounts, or claim their roles",
-    version = "1.1",
-    url = "https://steamcommunity.com/id/nano2k06/"
+    name 			= "Give Roles",
+    author 			= "Nano",
+    description 		= "Automatically give roles on discord when players join, or link their accounts, or claim their roles",
+    version 			= "1.2",
+    url 				= "https://steamcommunity.com/id/nano2k06/"
 };
 
-ConVar 	g_cInterval, 
-		g_cMethod,
-		g_cCmd;
-
-char	g_sPath[PLATFORM_MAX_PATH];
-
-bool	g_bIsCommandPlayer[MAXPLAYERS+1] = {false, ...},
-		g_bIsTimer 		= false,
-		g_bIsLink 		= false,
-		g_bIsCommand	= false;
+char g_sPath[PLATFORM_MAX_PATH];
 
 /*-------------------------
------Porpuse: Forwards-----
+-----Purpose: Forwards-----
 -------------------------*/
 
 public void OnPluginStart()
 {
-	g_cInterval	= CreateConVar("sm_gr_interval", 	"30",	"Time in seconds to refresh timer to check players flags (recommended a value greater than 10) (Default = 30)");
-	g_cMethod 	= CreateConVar("sm_gr_method", 		"2",	"What method do you want to use? 1 = Everytime an user links his account | 2 = Using a timer (in seconds) that checks player's flags to add/remove discord roles. | 3 = Using a command to claim role | 4 = All methods (Default = 2)", _, true, 1.0, true, 4.0);
-	g_cCmd 		= CreateConVar("sm_gr_command", 	"0",	"Individual cvar to restrict commands and use the other 3 methods. This should be enabled if you are using 'sm_gr_method 3 or 4'. 1 = Enabled | 0 = Disabled (Default = 0)");
+	HookEvent("player_connect_full", Event_PlayerConnect);
 	
 	BuildPath(Path_SM, g_sPath, sizeof(g_sPath), "configs/GiveRoles.cfg");
 	if(!FileExists(g_sPath))
@@ -42,91 +31,28 @@ public void OnPluginStart()
 		SetFailState("Could not find config: \"%s\"", g_sPath);
 		return;
 	}
-	
-	RegConsoleCmd("sm_claimrole", 	Command_ClaimRole);
-	RegConsoleCmd("sm_discordrole", Command_ClaimRole);
-	RegConsoleCmd("sm_giverole", 	Command_ClaimRole);
-
-	AutoExecConfig(true, "GiveRoles");
 }
 
-public void OnMapStart()
+public void Event_PlayerConnect(Event event, const char[] name, bool dontBroadcast)
 {
-	CreateTimer(g_cInterval.FloatValue, Timer_CheckRoles, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
-}
-
-public void DU_OnLinkedAccount(int client, const char[] userid, const char[] username, const char[] discriminator)
-{
-	if(g_cMethod.IntValue == 2 || g_cMethod.IntValue == 3)
+	int client = GetClientOfUserId(event.GetInt("userid"));
+	if (!client || !IsValidClient(client))
 	{
-		g_bIsLink = false;
 		return;
 	}
 
-	g_bIsLink = true;
-	HandleRoles();
-}
-
-public Action Command_ClaimRole(int client, int args)
-{
-	if(!client)
-	{
-		return Plugin_Handled;
-	}
-
-	if(GetUserAdmin(client).HasFlag(Admin_Generic))
-	{
-		if(g_cCmd.IntValue == 0 || g_cCmd.IntValue >= 2)
-		{
-			CPrintToChat(client, "{green}[DiscordRoles]{default} This feature is currently {darkred}disabled!");
-			CPrintToChat(client, "{green}[DiscordRoles]{default} Set the following cvar to 1: {green}sm_gr_command \"1\"");
-			return Plugin_Handled;
-		}
-	}
-	
-	if(g_cCmd.IntValue == 0 || g_cCmd.IntValue >= 2)
-	{
-		return Plugin_Handled;
-	}
-	
-	if(!g_cCmd.BoolValue)
-	{
-		CPrintToChat(client, "{green}[DiscordRoles]{default} This command is currently {darkred}disabled!");
-		return Plugin_Handled;
-	}
-
-	g_bIsCommand = true;
-	g_bIsCommandPlayer[client] = true;
-	HandleRoles();
-	return Plugin_Handled;
+	HandleRoles(client);
 }
 
 /*-------------------------
-------Porpuse: Timers------
--------------------------*/
-
-public Action Timer_CheckRoles(Handle timer)
-{
-	if(g_cMethod.IntValue == 1 || g_cMethod.IntValue == 3)
-	{
-		g_bIsTimer = false;
-		return;
-	}
-
-	g_bIsTimer = true;
-	HandleRoles();
-}
-
-/*-------------------------
-------Porpuse: Voids-------
+------Purpose: Voids-------
 --------------------------*/
 
-void HandleRoles()
+void HandleRoles(int client)
 {
-	char	sFlags[30], sTempFlag[32], sRolesGroupID[256],
-			sRoleID[32], sDisplayText[512];
+	char	sFlags[30], sTempFlag[32], sRolesGroupID[256], sRoleID[32];
 
-	int		iFlagCount;
+	int iFlagCount;
 
 	KeyValues g_sKeyValues = CreateKeyValues("GiveRoles");
 	
@@ -136,9 +62,9 @@ void HandleRoles()
 
 	do
 	{
-		g_sKeyValues.GetSectionName(sRoleID, 			sizeof(sRoleID));
-		g_sKeyValues.GetString("name", 	sRolesGroupID, 	sizeof(sRolesGroupID));   
-		g_sKeyValues.GetString("flags", sFlags,		 	sizeof(sFlags));
+		g_sKeyValues.GetSectionName(sRoleID, sizeof(sRoleID));
+		g_sKeyValues.GetString("name", sRolesGroupID, sizeof(sRolesGroupID));   
+		g_sKeyValues.GetString("flags", sFlags, sizeof(sFlags));
 
 		iFlagCount = strlen(sFlags);
 		
@@ -150,43 +76,19 @@ void HandleRoles()
 				GetFlagInt(sTempFlag);
 				int iFlag = StringToInt(sTempFlag);
 
-				for(int i = 1; i <= MaxClients; i++)
+				if(IsClientInGame(client) && GetUserAdmin(client).HasFlag(Admin_Root))
 				{
-					if(IsClientInGame(i) && GetUserAdmin(i).HasFlag(Admin_Root))
+					return;
+				}
+				if(IsValidClient(client))
+				{
+					if(Client_HasAdminFlags(client, iFlag))
 					{
-						return;
+						DU_AddRole(client, sRoleID);
 					}
-					if(g_bIsCommand)
+					else
 					{
-						if(g_bIsCommandPlayer[i])
-						{
-							if(Client_HasAdminFlags(i, iFlag))
-							{
-								Format(sDisplayText, sizeof(sDisplayText), "<span font color='#00FFFF'>───────────</font></span>Discord Roles <span font color='#00FFFF'>───────────</font></span>\nYou have successfully claimed your Discord role!");
-								PrintHintText(i, sDisplayText);
-								CPrintToChat(i, "{green}[DiscordRoles]{default} You have successfully claimed your {green}Discord role!");
-								g_bIsCommandPlayer[i] = false;
-							}
-						}
-					}
-					if(IsValidClient(i))
-					{
-						if(Client_HasAdminFlags(i, iFlag))
-						{
-							DU_AddRole(i, sRoleID);
-							if(g_bIsLink)
-							{
-								Format(sDisplayText, sizeof(sDisplayText), "<span font color='#00FFFF'>───────────</font></span>Discord Roles <span font color='#00FFFF'>───────────</font></span>\nYou have now a Discord role on our Discord server!");
-								PrintHintText(i, sDisplayText);
-							}
-						}
-						else
-						{
-							if(g_bIsTimer)
-							{
-								DU_DeleteRole(i, sRoleID);
-							}
-						}
+						DU_DeleteRole(client, sRoleID);
 					}
 				}
 			}
@@ -197,7 +99,7 @@ void HandleRoles()
 }
 
 /*-------------------------
-------Porpuse: Stocks------
+------Purpose: Stocks------
 -------------------------*/
 
 stock void GetFlagInt(char sBuffer[30])
